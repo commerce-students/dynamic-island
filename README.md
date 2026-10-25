@@ -29,7 +29,7 @@ animated pill that never gets in the way.</p>
 
 ## Install
 
-1. Grab **`Dynamic-Island-Setup-1.3.0.exe`** from the [latest release](https://github.com/commerce-students/dynamic-island/releases/latest).
+1. Grab **`Dynamic-Island-Setup-1.5.0.exe`** from the [latest release](https://github.com/commerce-students/dynamic-island/releases/latest).
 2. Double-click it. That's the whole install - one click, no questions.
 3. The island appears at the top of your screen and starts with Windows from
    then on.
