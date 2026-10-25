@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' file: data:; media-src 'self' file: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>Dynamic Island</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="stage">
+    <div id="pill-wrap">
+      <div id="pill" data-view="idle" data-theme="black">
+        <div class="shine"></div>
+
+        <!-- idle -->
+        <section class="layer" data-layer="idle">
+          <div class="idle-inner">
+            <span class="live-dot" id="live-dot"></span>
+            <span class="flag-moon" id="flag-moon" title="Focus Assist is on">☾</span>
+            <span id="idle-time">--:--</span>
+          </div>
+        </section>
+
+        <!-- compact now playing -->
+        <section class="layer" data-layer="compact">
+          <div class="compact-inner">
+            <div class="art art-sm empty" id="compact-art-box"><img id="compact-art" alt="" /></div>
+            <div class="bars" id="compact-bars"><i></i><i></i><i></i></div>
+          </div>
+        </section>
+
+        <!-- expanded now playing -->
+        <section class="layer" data-layer="music">
+          <div class="music-inner">
+            <div class="art art-lg empty" id="song-art-box"><img id="song-art" alt="" /></div>
+            <div class="music-meta">
+              <div class="music-top">
+                <div class="music-text">
+                  <div class="song-title" id="song-title">Nothing playing</div>
+                  <div class="song-artist" id="song-artist"></div>
+                </div>
+                <div class="bars bars-lg" id="music-bars"><i></i><i></i><i></i><i></i></div>
+              </div>
+              <div class="progress" id="progress">
+                <div class="progress-fill" id="progress-fill"></div>
+                <div class="progress-knob" id="progress-knob"></div>
+              </div>
+              <div class="times"><span id="time-now">0:00</span><span id="time-end">0:00</span></div>
+              <div class="controls">
+                <button class="ctrl" id="btn-prev" aria-label="Previous">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6 5h2v14H6zm12.5.8v12.4c0 .8-.9 1.3-1.6.9l-9.5-6.2a1 1 0 0 1 0-1.8l9.5-6.2c.7-.4 1.6.1 1.6.9z"/></svg>
+                </button>
+                <button class="ctrl ctrl-main" id="btn-play" aria-label="Play or pause">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" id="play-icon"><path d="M8 5.2v13.6c0 .8.9 1.3 1.6.9l10.4-6.8a1 1 0 0 0 0-1.7L9.6 4.3A1.1 1.1 0 0 0 8 5.2z"/></svg>
+                </button>
+                <button class="ctrl" id="btn-next" aria-label="Next">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M16 5h2v14h-2zM5.5 5.8v12.4c0 .8.9 1.3 1.6.9l9.5-6.2a1 1 0 0 0 0-1.8L7.1 4.9c-.7-.4-1.6.1-1.6.9z"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- idle panel -->
+        <section class="layer" data-layer="panel">
+          <div class="panel-inner">
+            <div class="panel-home" id="panel-home">
+              <div class="panel-top">
+                <div class="panel-clock">
+                  <div class="clock-big" id="clock-big">--:--</div>
+                  <div class="clock-date" id="clock-date"></div>
+                </div>
+                <div class="panel-side">
+                  <div class="battery" id="battery">
+                    <div class="battery-shell"><div class="battery-fill" id="battery-fill"></div></div>
+                    <span id="battery-text">--%</span>
+                  </div>
+                  <div class="panel-actions">
+                    <button class="icon-btn" id="open-stats" aria-label="System stats">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 19v-6M12 19V5M19 19v-9"/></svg>
+                    </button>
+                    <button class="chip chip-ai" id="open-ai" aria-label="AI assistant">✦ AI</button>
+                    <button class="chip" id="open-timer">Timer</button>
+                    <button class="icon-btn" id="open-settings" aria-label="Settings">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="panel-event" id="panel-event">
+                <span class="ev-dot"></span>
+                <span class="ev-text" id="ev-text"></span>
+                <span class="ev-time" id="ev-time"></span>
+              </div>
+            </div>
+
+            <div class="panel-timer" id="panel-timer">
+              <div class="preset-label">Set a timer</div>
+              <div class="presets">
+                <button class="preset" data-min="1">1</button>
+                <button class="preset" data-min="5">5</button>
+                <button class="preset" data-min="10">10</button>
+                <button class="preset" data-min="25">25</button>
+              </div>
+            </div>
+
+            <div class="panel-stats" id="panel-stats">
+              <div class="stats-row">
+                <span class="stats-label">CPU</span>
+                <span class="stats-bar"><i id="stats-cpu-bar"></i></span>
+                <span class="stats-value" id="stats-cpu">--%</span>
+              </div>
+              <div class="stats-row">
+                <span class="stats-label">Memory</span>
+                <span class="stats-bar"><i id="stats-mem-bar"></i></span>
+                <span class="stats-value" id="stats-mem">--</span>
+              </div>
+              <div class="stats-foot" id="stats-foot">Reading…</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- running timer -->
+        <section class="layer" data-layer="timer">
+          <div class="timer-inner">
+            <div class="timer-ring">
+              <svg viewBox="0 0 44 44" width="44" height="44">
+                <circle cx="22" cy="22" r="19" class="ring-track"></circle>
+                <circle cx="22" cy="22" r="19" class="ring-fill" id="ring-fill"></circle>
+              </svg>
+            </div>
+            <div class="timer-text">
+              <div class="timer-count" id="timer-count">0:00</div>
+              <div class="timer-sub" id="timer-sub">Timer</div>
+            </div>
+            <button class="ghost-btn" id="timer-cancel" aria-label="Cancel timer">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+        </section>
+
+        <!-- transient -->
+        <section class="layer" data-layer="transient">
+          <div class="transient-inner">
+            <span class="t-icon" id="t-icon"></span>
+            <span class="t-text" id="t-text"></span>
+            <span class="t-bar" id="t-bar"><i id="t-bar-fill"></i></span>
+          </div>
+        </section>
+
+        <!-- live activities (up to two, side by side) -->
+        <section class="layer" data-layer="activity">
+          <div class="activity-stack" id="activity-stack"></div>
+        </section>
+
+        <!-- call banner -->
+        <section class="layer" data-layer="call">
+          <div class="call-inner">
+            <span class="call-dot"></span>
+            <div class="call-text">
+              <span class="call-app" id="call-app">Call</span>
+              <span class="call-sub" id="call-sub">in progress</span>
+            </div>
+            <button class="chip" id="call-open">Open</button>
+            <button class="ghost-btn" id="call-close" aria-label="Dismiss call banner">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <canvas id="confetti"></canvas>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# build output
+node_modules/
+release/
+runtime/
+.cache/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# logs and local junk
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# stray build artifacts
+Dynamic-Island-Setup-*.exe
+shots/
+

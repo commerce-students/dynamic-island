@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'">
+  <title>Dynamic Island AI</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="card">
+    <header>
+      <div class="brand"><span class="spark">✦</span> <span id="title">Assistant</span></div>
+      <div class="head-actions">
+        <button id="clear" title="Clear this chat">Clear</button>
+        <button id="close" title="Close (Esc)">✕</button>
+      </div>
+    </header>
+
+    <main id="scroll">
+      <div id="thread"></div>
+      <div id="empty">
+        <p class="lead">Ask anything. Nothing is sent until you press Enter.</p>
+        <div class="chips">
+          <button data-fill="Explain what this error means: ">Explain an error</button>
+          <button data-fill="Turn these notes into a task list: ">Notes → tasks</button>
+          <button data-fill="Summarise this text in five bullet points: ">Summarise text</button>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <textarea id="input" rows="1" placeholder="Message the assistant…" spellcheck="false"></textarea>
+      <button id="send" aria-label="Send">↑</button>
+    </footer>
+    <div id="hint"></div>
+  </div>
+
+  <script src="preload.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

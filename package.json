@@ -1,0 +1,85 @@
+{
+  "name": "dynamic-island",
+  "productName": "Dynamic Island",
+  "version": "1.5.0",
+  "description": "A living Dynamic Island for Windows - now playing, volume, timers, clipboard, calendar and live activities in one animated pill.",
+  "main": "src/main.js",
+  "author": "Lucki",
+  "license": "MIT",
+  "homepage": "https://github.com/commerce-students/dynamic-island",
+  "keywords": [
+    "dynamic-island",
+    "windows",
+    "electron",
+    "widget",
+    "now-playing",
+    "media",
+    "desktop"
+  ],
+  "scripts": {
+    "start": "electron .",
+    "runtime": "node scripts/prepare-runtime.mjs",
+    "icons": "python scripts/make-icon.py",
+    "set-repo": "node scripts/set-repo.mjs",
+    "pack": "node scripts/prepare-runtime.mjs && electron-builder --win --dir",
+    "dist": "node scripts/prepare-runtime.mjs && electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.dynamicisland.app",
+    "productName": "Dynamic Island",
+    "copyright": "Copyright (c) 2026 Lucki",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "runtime",
+        "to": "runtime"
+      },
+      {
+        "from": "assets",
+        "to": "assets"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Dynamic-Island-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": true,
+      "allowElevation": true,
+      "runAfterFinish": true,
+      "createStartMenuShortcut": false,
+      "createDesktopShortcut": false,
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh",
+      "artifactName": "Dynamic-Island-Setup-${version}.${ext}"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/commerce-students/dynamic-island.git"
+  },
+  "bugs": {
+    "url": "https://github.com/commerce-students/dynamic-island/issues"
+  }
+}
