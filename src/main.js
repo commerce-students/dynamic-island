@@ -80,6 +80,25 @@ function placeIsland() {
   island.setBounds(islandBounds())
 }
 
+/**
+ * Every window loads local files only. Anything that tries to navigate away or
+ * open a popup is handed to the real browser, or refused.
+ */
+function lockDown(win) {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://')) event.preventDefault()
+  })
+
+  // Nothing here captures a microphone, a camera or the screen, so every
+  // permission prompt is a bug or an attack.
+  win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+}
+
 function createIsland() {
   island = new BrowserWindow({
     ...islandBounds(),
@@ -102,9 +121,11 @@ function createIsland() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       backgroundThrottling: false
     }
   })
+  lockDown(island)
 
   island.loadFile(path.join(__dirname, 'renderer', 'index.html'))
 
@@ -121,7 +142,9 @@ function createIsland() {
 
 function sendConfigToIsland() {
   if (!island || island.isDestroyed()) return
-  const conf = settings.get()
+
+  // publicConfig() strips the provider key: the island only needs ai.enabled.
+  const conf = settings.publicConfig()
   const custom = conf.timer && conf.timer.customSound
   let customUrl = ''
   try {
@@ -186,9 +209,11 @@ function openSettings() {
     webPreferences: {
       preload: path.join(__dirname, 'settings-preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true
     }
   })
+  lockDown(prefs)
 
   prefs.loadFile(path.join(__dirname, 'settings', 'index.html'))
     .then(() => {
@@ -204,27 +229,60 @@ function openSettings() {
   prefs.on('closed', () => { prefs = null })
 }
 
-ipcMain.handle('settings:get', () => ({
-  settings: settings.get(),
-  info: {
-    version: app.getVersion(),
-    settingsFile: settings.settingsFile(),
-    port: activityServer ? activityServer.port : null,
-    artDir: path.join(app.getPath('temp'), 'dynamic-island-art'),
-    autostart: isAutoStartEnabled()
-  }
-}))
+/**
+ * Only our own windows may change settings or spend the user's AI quota.
+ * A compromised renderer cannot become a second caller: the check is on the
+ * webContents that sent the message, not on anything in the payload.
+ */
+function fromOwnWindow(event) {
+  const id = event && event.sender ? event.sender.id : -1
+  return [island, prefs, aiWin].some((win) => win && !win.isDestroyed() && win.webContents.id === id)
+}
 
-ipcMain.handle('settings:set', (_event, patch) => {
-  const next = settings.set(patch)
-  applySettings(patch)
-  return next
+ipcMain.handle('settings:get', (event) => {
+  if (!fromOwnWindow(event)) throw new Error('untrusted sender')
+  return {
+    settings: settings.publicConfig(),
+    info: {
+      version: app.getVersion(),
+      settingsFile: settings.settingsFile(),
+      port: activityServer ? activityServer.port : null,
+      artDir: path.join(app.getPath('temp'), 'dynamic-island-art'),
+      autostart: isAutoStartEnabled()
+    }
+  }
 })
 
-ipcMain.handle('settings:reset', () => {
+ipcMain.handle('settings:set', (event, patch) => {
+  if (!fromOwnWindow(event)) return settings.publicConfig()
+  const safe = patch && typeof patch === 'object' && !Array.isArray(patch) ? { ...patch } : {}
+
+  // The settings window never receives the key, so an empty field means
+  // "leave it alone" rather than "erase it".
+  if (safe.ai && typeof safe.ai === 'object' && !Array.isArray(safe.ai)) {
+    const aiPatch = { ...safe.ai }
+    if (!String(aiPatch.apiKey || '').trim()) delete aiPatch.apiKey
+    safe.ai = aiPatch
+  }
+
+  settings.set(safe)
+  applySettings(safe)
+  return settings.publicConfig()
+})
+
+ipcMain.handle('settings:reset', (event) => {
+  if (!fromOwnWindow(event)) return settings.publicConfig()
   const next = settings.reset()
   applySettings(next)
-  return next
+  return settings.publicConfig()
+})
+
+ipcMain.handle('settings:clear-api-key', (event) => {
+  if (!fromOwnWindow(event)) return settings.publicConfig()
+  settings.set({ ai: { apiKey: '' } })
+  const conf = settings.publicConfig()
+  if (prefs && !prefs.isDestroyed()) prefs.webContents.send('settings:changed', conf)
+  return conf
 })
 
 ipcMain.handle('settings:calendar-check', async () => {
@@ -275,9 +333,11 @@ function createAiWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'ai', 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true
     }
   })
+  lockDown(aiWin)
 
   aiWin.setAlwaysOnTop(true, 'floating')
   aiWin.loadFile(path.join(__dirname, 'ai', 'index.html'))
@@ -320,9 +380,10 @@ ipcMain.on('ai:open-settings', () => {
   openSettings()
 })
 
-ipcMain.handle('ai:info', () => {
+ipcMain.handle('ai:info', (event) => {
+  if (!fromOwnWindow(event)) throw new Error('untrusted sender')
   const conf = settings.get().ai || {}
-  const provider = ai.PROVIDERS[conf.provider] ? conf.provider : 'groq'
+  const provider = ai.PROVIDERS[conf.provider] ? conf.provider : 'pollinations'
   const spec = ai.PROVIDERS[provider]
   const model = (conf.model || '').trim() || spec.model
   return {
@@ -334,17 +395,18 @@ ipcMain.handle('ai:info', () => {
   }
 })
 
-ipcMain.handle('ai:send', async (_event, messages) => {
+ipcMain.handle('ai:send', async (event, messages) => {
+  if (!fromOwnWindow(event)) return { ok: false, error: 'Untrusted sender.' }
   const conf = settings.get().ai || {}
   if (!conf.enabled) return { ok: false, error: 'The assistant is switched off. Turn it on in Settings → AI.' }
   return ai.ask(conf, messages)
 })
 
-ipcMain.handle('ai:test', async () => {
+ipcMain.handle('ai:test', async (event) => {
+  if (!fromOwnWindow(event)) return { ok: false, error: 'Untrusted sender.' }
   const conf = settings.get().ai || {}
   const result = await ai.test(conf)
   if (result.ok) {
-    // Persist the model we actually used so the chat window shows it.
     return { ok: true, text: result.text }
   }
   return { ok: false, error: result.error }
@@ -362,10 +424,15 @@ function openTarget(target) {
   if (!value) return
   try {
     if (fs.existsSync(value)) { shell.openPath(value); return }
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) || /^[a-z][a-z0-9+.-]*:[^\\/]/i.test(value)) {
+
+    // Only schemes that the browser or mail client should ever handle. A card
+    // pushed by some local script must not be able to launch arbitrary
+    // protocol handlers.
+    if (/^(https?:\/\/|mailto:)/i.test(value)) {
       shell.openExternal(value)
       return
     }
+    if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return
   } catch { /* fall through to focusing */ }
   sendToMedia('focus:' + value)
 }
@@ -468,7 +535,7 @@ function applySettings(patch = {}) {
   sendConfigToIsland()
 
   if (prefs && !prefs.isDestroyed()) {
-    prefs.webContents.send('settings:changed', conf)
+    prefs.webContents.send('settings:changed', settings.publicConfig())
   }
   rebuildTray()
 }
@@ -787,6 +854,7 @@ function startActivities() {
   }
   activityServer = activities.start({
     port: conf.port,
+    allowBrowser: !!conf.allowBrowser,
     onActivity: (activity) => {
       pushActivity(activity)
       if (prefs && !prefs.isDestroyed()) prefs.webContents.send('activity:fired', activity)

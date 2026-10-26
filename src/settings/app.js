@@ -324,7 +324,7 @@ function buildPanes() {
           {
             type: 'text', path: 'ai.apiKey', label: 'API key', secret: true, wide: true,
             placeholder: 'paste your key here',
-            hint: 'Kept in your local settings file and sent only to the provider you picked above.'
+            hint: 'Stored in your local settings file. No window ever receives it back — an empty box means your key is kept.'
           },
           {
             type: 'button', label: 'Connection',
@@ -333,6 +333,15 @@ function buildPanes() {
             onClick: async () => {
               const result = await api.aiTest()
               showToast(result && result.ok ? 'Key works' : (result && result.error) || 'Test failed')
+            }
+          },
+          {
+            type: 'button', label: 'Stored key',
+            hint: 'Forget the key on this PC.',
+            buttonLabel: 'Remove key',
+            onClick: async () => {
+              await api.clearApiKey()
+              showToast('Key removed')
             }
           }
         ]
@@ -357,6 +366,7 @@ function buildPanes() {
         rows: [
           { type: 'toggle', path: 'activities.enabled', label: 'Accept activities', hint: 'A local HTTP server, bound to 127.0.0.1 only.' },
           { type: 'number', path: 'activities.port', label: 'Port', hint: 'Change it if something else uses the default.', narrow: true },
+          { type: 'toggle', path: 'activities.allowBrowser', label: 'Allow web pages', hint: 'Off means a page in your browser cannot post into the island. Leave it off unless you use a bookmarklet.' },
           {
             type: 'button', label: 'Test', hint: 'Sends one so you can see it.',
             buttonLabel: 'Send a test activity',

@@ -13,6 +13,7 @@ animated pill that never gets in the way.</p>
 <a href="LICENSE"><img src="https://img.shields.io/github/license/commerce-students/dynamic-island" alt="License"></a>
 <a href="https://github.com/commerce-students/dynamic-island/releases"><img src="https://img.shields.io/github/v/release/commerce-students/dynamic-island?include_prereleases" alt="Release"></a>
 <a href="https://github.com/commerce-students/dynamic-island/releases"><img src="https://img.shields.io/github/downloads/commerce-students/dynamic-island/total" alt="Downloads"></a>
+<a href="https://github.com/commerce-students/dynamic-island/actions/workflows/ci.yml"><img src="https://github.com/commerce-students/dynamic-island/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 <p>
@@ -209,6 +210,20 @@ as a fallback, so the one-line example above still works.
 island is running. The server binds to `127.0.0.1` only - it is not reachable
 from your network.
 
+### What the endpoint refuses
+
+The port is open to every process on your PC, and to every web page you have
+open. Three rules keep browsers out without getting in the way of scripts:
+
+| Rule | Result |
+|---|---|
+| `POST` without `Content-Type: application/json` | `415` - a cross-origin page cannot set that header |
+| A request carrying an `Origin` header | `403` - unless you tick **Allow web pages** in Settings → Live Activities |
+| More than 30 pushes a minute | `429` - a runaway loop cannot drown the island |
+| A body over 16 KB | `413` |
+
+Bodies with a UTF-8 BOM are accepted, because PowerShell writes one by default.
+
 ## Privacy
 
 - The island reads **metadata only**: the title/artist Windows publishes for the
@@ -216,8 +231,34 @@ from your network.
   registry keys that Windows itself maintains.
 - It never records audio, never reads clipboard history, and never keeps copied
   text.
-- The only outbound request is the calendar URL you paste in yourself.
+- The only automatic outbound request is the calendar URL you paste in yourself.
+  If you switch the assistant on, a message you send goes to the provider you
+  picked (and to nowhere else). With **Ollama** nothing leaves the machine.
+- **No window ever receives your API key.** It lives in the main process, is
+  replaced by `hasApiKey: true` before any window sees the settings, and is only
+  used in the request to the provider you chose.
 - No accounts, no analytics, no update pings.
+
+## Security
+
+The app is built to the Electron checklist rather than around it:
+
+- `contextIsolation: true`, `nodeIntegration: false` and `sandbox: true` on every
+  window; each preload exposes a named, minimal API instead of `ipcRenderer`.
+- Windows only ever load local files. Navigation away from them is blocked,
+  popups are denied, and http(s) links are handed to your real browser.
+- Every permission request (microphone, camera, screen, notifications) is denied:
+  the app has no feature that needs one.
+- Settings changes and AI calls are only accepted from the app's own three
+  windows, checked by `webContents` id, not by anything inside the payload.
+- The settings merge refuses `__proto__`, `constructor` and `prototype`, so a
+  crafted patch cannot pollute `Object.prototype`.
+- A tap on a Live Activity can open `http(s):`, `mailto:` or a real path. Every
+  other protocol handler is ignored.
+- `npm test` covers the network boundary and the merge: 24 tests, no test
+  framework, no dependencies.
+
+Details and the remaining hardening work are in [`docs/audit.md`](docs/audit.md).
 
 ## Run it from source
 

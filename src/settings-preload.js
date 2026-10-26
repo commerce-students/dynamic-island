@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('prefs', {
   pickSound: () => ipcRenderer.invoke('settings:pick-sound'),
   previewSound: () => { ipcRenderer.send('settings:preview-sound') },
   aiTest: () => ipcRenderer.invoke('ai:test'),
+  clearApiKey: () => ipcRenderer.invoke('settings:clear-api-key'),
   close: () => ipcRenderer.send('settings:close'),
   quit: () => ipcRenderer.send('app:quit'),
   reveal: (where) => ipcRenderer.send('app:reveal', where),

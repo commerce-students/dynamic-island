@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dependencies
+        run: npm ci
+
+      - name: Syntax check every source file
+        shell: pwsh
+        run: |
+          $failed = @()
+          Get-ChildItem -Recurse -Filter *.js -Path src, scripts | ForEach-Object {
+            node --check $_.FullName
+            if ($LASTEXITCODE -ne 0) { $failed += $_.FullName }
+          }
+          if ($failed.Count -gt 0) {
+            Write-Error "Syntax errors in: $($failed -join ', ')"
+            exit 1
+          }
+
+      - name: Unit tests
+        run: npm test

@@ -58,7 +58,9 @@ const DEFAULTS = {
   },
   activities: {
     enabled: true,
-    port: 39321
+    port: 39321,
+    // Off by default: a web page must not be able to draw in the island.
+    allowBrowser: false
   },
   volume: {
     enabled: true
@@ -93,10 +95,14 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+// Never let a stored or patched object reach Object.prototype.
+const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
 function deepMerge(base, patch) {
   const out = Array.isArray(base) ? base.slice() : { ...base }
   if (!isPlainObject(patch)) return out
   for (const [key, value] of Object.entries(patch)) {
+    if (BLOCKED_KEYS.has(key)) continue
     if (isPlainObject(value) && isPlainObject(out[key])) {
       out[key] = deepMerge(out[key], value)
     } else if (value !== undefined) {
@@ -144,11 +150,28 @@ function reset() {
   return current
 }
 
+/**
+ * The settings a renderer is allowed to see.
+ *
+ * The API key is replaced by a boolean. No window needs the secret itself -
+ * only the main process does, and it is the only thing that calls a provider.
+ */
+function publicConfig() {
+  const conf = get()
+  const apiKey = String((conf.ai && conf.ai.apiKey) || '')
+  return {
+    ...conf,
+    ai: { ...conf.ai, apiKey: '', hasApiKey: Boolean(apiKey.trim()) }
+  }
+}
+
 module.exports = {
   DEFAULTS,
+  deepMerge,
   settingsFile,
   load,
   get,
+  publicConfig,
   set,
   reset,
   onChange: (fn) => emitter.on('change', fn)
