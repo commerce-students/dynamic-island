@@ -74,9 +74,9 @@ const DEFAULTS = {
     repeat: true
   },
   ai: {
-    enabled: false,
-    provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    enabled: true,
+    provider: 'pollinations',
+    model: 'openai',
     apiKey: '',
     maxTokens: 600
   }

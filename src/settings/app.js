@@ -309,15 +309,17 @@ function buildPanes() {
           {
             type: 'select', path: 'ai.provider', label: 'Provider',
             options: [
-              { value: 'groq', label: 'Groq — free tier' },
-              { value: 'gemini', label: 'Google Gemini — free tier' },
-              { value: 'openai', label: 'OpenAI' },
+              { value: 'pollinations', label: 'Pollinations — free, no key' },
+              { value: 'groq', label: 'Groq — free tier, needs key' },
+              { value: 'gemini', label: 'Google Gemini — free tier, needs key' },
+              { value: 'openai', label: 'OpenAI — paid, needs key' },
               { value: 'ollama', label: 'Ollama — local, no key' }
-            ]
+            ],
+            hint: 'Pollinations works immediately with no signup. Groq and Gemini are faster and stronger once you paste a key.'
           },
           {
             type: 'text', path: 'ai.model', label: 'Model', medium: true,
-            hint: 'Groq: llama-3.3-70b-versatile · Gemini: gemini-2.0-flash · Ollama: llama3.2'
+            hint: 'Pollinations: openai · Groq: llama-3.3-70b-versatile · Gemini: gemini-3.5-flash · Ollama: llama3.2'
           },
           {
             type: 'text', path: 'ai.apiKey', label: 'API key', secret: true, wide: true,
@@ -338,8 +340,8 @@ function buildPanes() {
       {
         title: 'Getting a free key',
         rows: [
-          { type: 'note', html: '<b>Groq</b> — <b>console.groq.com/keys</b> · free, no card needed.<br><b>Gemini</b> — <b>aistudio.google.com/apikey</b> · free tier.<br><b>Ollama</b> — <b>ollama.com</b> · runs on your own PC, no key, no internet.' },
-          { type: 'note', html: 'I cannot create the key for you — every provider ties a key to your own account. Once it is pasted above, turn the assistant on and click the ✦ in the island.' }
+          { type: 'note', html: '<b>Pollinations</b> is already selected above and needs no key at all — pick it and start typing.<br><b>Groq</b> — <b>console.groq.com/keys</b> · free, no card needed.<br><b>Gemini</b> — <b>aistudio.google.com/apikey</b> · free tier.<br><b>Ollama</b> — <b>ollama.com</b> · runs on your own PC, no key, no internet.' },
+          { type: 'note', html: 'A pasted key is only used by the provider you picked, and never leaves your PC except in a request to that provider.' }
         ]
       }
     ]

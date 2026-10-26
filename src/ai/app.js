@@ -26,7 +26,8 @@ const LABELS = {
   groq: 'Groq',
   gemini: 'Gemini',
   openai: 'OpenAI',
-  ollama: 'Ollama'
+  ollama: 'Ollama',
+  pollinations: 'Assistant'
 }
 
 function scrollDown() {
@@ -128,7 +129,10 @@ async function submit() {
   els.thread.append(thinking)
   scrollDown()
 
-  const reply = await window.ai.send(persistable())
+  const reply = await window.ai.send(persistable()).catch((err) => ({
+    ok: false,
+    error: 'The assistant could not be reached. ' + (err && err.message ? err.message : '')
+  }))
   thinking.remove()
 
   if (reply && reply.ok) {

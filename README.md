@@ -76,13 +76,16 @@ the tray icon.
 A `✦ AI` chip in the panel opens a small chat window under the island. It is
 off until you turn it on, and it sends nothing until you press Enter.
 
-- **Four providers**, chosen in Settings → AI: **Groq** and **Google Gemini**
-  both have a real free tier, **OpenAI** if you already pay for it, and
-  **Ollama** runs entirely on your own machine with no key and no internet.
+- **Five providers**, chosen in Settings → AI. **Pollinations** works immediately with
+  no signup and no key, **Groq** and **Google Gemini** each have a real free tier,
+  **OpenAI** if you already pay for it, and **Ollama** runs entirely on your own
+  machine with no key and no internet.
+- **It degrades instead of dying.** If the free no-key service is busy, the app
+  quietly asks your local Ollama before giving up.
 - **Your key stays in the main process.** The chat window never sees it — the
   renderer asks the main process, which makes the request.
-- **No key is bundled.** I cannot create one for you: every provider ties a key
-  to your own account. The settings pane links straight to where you get one.
+- **No key is bundled.** Every provider ties a key to your own account; the
+  settings pane links straight to where you get one.
 - **Cancellable and honest.** Timeouts, HTTP errors and explanations come back
   in the window — it never pretends an answer arrived.
 
