@@ -62,6 +62,7 @@ the tray icon.
 | <img src="docs/island-volume.png" width="240"> | **Volume.** A HUD with a real level meter whenever the volume changes. |
 | <img src="docs/island-calendar.png" width="240"> | **Calendar.** Counts down to your next meeting from a private iCal link. |
 | <img src="docs/island-activity.png" width="240"> | **Live activities.** Any script can push a card - builds, downloads, CI, long jobs. |
+| <img src="docs/island-activity-centre.png" width="240"> | **Activity centre.** The bell keeps the last 50 cards on disk, grouped and ranked, so a finished build is still there when you get back. |
 | <img src="docs/island-two.png" width="240"> | **Two at once.** Apple splits the island when a second activity arrives; so does this. |
 | <img src="docs/island-call.png" width="240"> | **Call banner.** Appears while a call holds the microphone, with one button that jumps to the app. |
 | <img src="docs/island-mic.png" width="240"> | **Microphone & camera.** Shows which app is recording, from the same source as the Windows privacy dot. |
@@ -176,6 +177,8 @@ curl -X POST http://127.0.0.1:39321/push `
 | `tone` | string | `info`, `success`, `warning`, `error` |
 | `durationMs` | number | how long the card stays |
 | `id` | string | push the same id again to update a card in place instead of adding one |
+| `group` | string | a stable name for "the same thing"; repeat pushes update one row and bump its counter |
+| `priority` | number | `0` passive, `1` normal, `2` time-sensitive - higher stays on top of the bell |
 | `open` | string | what a tap opens: a URL, a file path, or a window title to raise |
 | `layout` | object | Apple's ActivityKit regions, see below |
 
@@ -206,9 +209,18 @@ one replaces the oldest.
 Every region is optional - the flat `title` / `subtitle` / `icon` fields are used
 as a fallback, so the one-line example above still works.
 
-`POST /clear` dismisses every card. `GET /health` answers `{"ok":true}` when the
-island is running. The server binds to `127.0.0.1` only - it is not reachable
-from your network.
+`POST /clear` dismisses every card. `GET /activities` returns the saved history as
+JSON (`{ ok, unread, items }`), newest first with time-sensitive cards above the
+rest. `GET /health` answers `{"ok":true}` when the island is running. The server
+binds to `127.0.0.1` only - it is not reachable from your network.
+
+### The bell
+
+Every push is also written to `%APPDATA%\Dynamic Island\activities.json` - the
+last 50 by default, configurable in Settings. The bell in the panel opens the
+centre: tap a row to follow its `open` target, `×` to dismiss one, **Clear all**
+to empty it. Opening the centre marks everything read, so the red badge only
+counts what you have not looked at.
 
 ### What the endpoint refuses
 
@@ -237,6 +249,9 @@ Bodies with a UTF-8 BOM are accepted, because PowerShell writes one by default.
 - **No window ever receives your API key.** It lives in the main process, is
   replaced by `hasApiKey: true` before any window sees the settings, and is only
   used in the request to the provider you chose.
+- **The key is sealed with Windows DPAPI.** On disk it is an `enc:v1:` blob tied
+  to your Windows account - copying `settings.json` to another PC or user yields
+  nothing readable. Existing plaintext keys are migrated on first launch.
 - No accounts, no analytics, no update pings.
 
 ## Security

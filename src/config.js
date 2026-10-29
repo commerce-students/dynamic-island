@@ -2,8 +2,20 @@
 
 const fs = require('fs')
 const path = require('path')
-const { app } = require('electron')
+const { app, safeStorage } = require('electron')
 const { EventEmitter } = require('events')
+const { createVault, migrateKey } = require('./lib/keyvault')
+
+/**
+ * DPAPI on Windows: the ciphertext only opens for this Windows account.
+ * If the platform cannot encrypt, the vault reports it and the key stays in
+ * plaintext rather than being thrown away.
+ */
+const vault = createVault({
+  available: () => safeStorage && safeStorage.isEncryptionAvailable(),
+  encryptString: (text) => safeStorage.encryptString(text),
+  decryptString: (buffer) => safeStorage.decryptString(buffer)
+})
 
 const DEFAULTS = {
   general: {
@@ -60,7 +72,9 @@ const DEFAULTS = {
     enabled: true,
     port: 39321,
     // Off by default: a web page must not be able to draw in the island.
-    allowBrowser: false
+    allowBrowser: false,
+    keep: 50,
+    showOnPush: true
   },
   volume: {
     enabled: true
@@ -80,6 +94,7 @@ const DEFAULTS = {
     provider: 'pollinations',
     model: 'openai',
     apiKey: '',
+    apiKeyEnc: '',
     maxTokens: 600
   }
 }
@@ -116,6 +131,15 @@ function load() {
   try {
     const raw = JSON.parse(fs.readFileSync(settingsFile(), 'utf8').replace(/^\uFEFF/, ''))
     current = deepMerge(DEFAULTS, raw)
+
+    const before = String((raw.ai && raw.ai.apiKey) || '').trim()
+    const migrated = migrateKey(current.ai, vault)
+    current.ai = migrated.ai
+    if (migrated.changed) {
+      // Persist the sealed form, then keep the key usable for this session.
+      save()
+      current.ai.apiKey = before
+    }
   } catch {
     current = deepMerge(DEFAULTS, {})
   }
@@ -127,10 +151,24 @@ function get() {
   return current
 }
 
+/** What actually goes to disk. The key is sealed, never written as typed. */
+function persisted() {
+  const copy = JSON.parse(JSON.stringify(current))
+  const ai = copy.ai
+  if (ai && typeof ai.apiKey === 'string' && ai.apiKey.trim()) {
+    const sealed = vault.seal(ai.apiKey.trim())
+    if (sealed) {
+      ai.apiKeyEnc = sealed
+      ai.apiKey = ''
+    }
+  }
+  return copy
+}
+
 function save() {
   try {
     fs.mkdirSync(path.dirname(settingsFile()), { recursive: true })
-    fs.writeFileSync(settingsFile(), JSON.stringify(current, null, 2), 'utf8')
+    fs.writeFileSync(settingsFile(), JSON.stringify(persisted(), null, 2), 'utf8')
   } catch (err) {
     console.error('[settings] could not save', err)
   }
@@ -161,7 +199,7 @@ function publicConfig() {
   const apiKey = String((conf.ai && conf.ai.apiKey) || '')
   return {
     ...conf,
-    ai: { ...conf.ai, apiKey: '', hasApiKey: Boolean(apiKey.trim()) }
+    ai: { ...conf.ai, apiKey: '', apiKeyEnc: '', hasApiKey: Boolean(apiKey.trim()) }
   }
 }
 

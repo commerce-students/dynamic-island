@@ -367,6 +367,8 @@ function buildPanes() {
           { type: 'toggle', path: 'activities.enabled', label: 'Accept activities', hint: 'A local HTTP server, bound to 127.0.0.1 only.' },
           { type: 'number', path: 'activities.port', label: 'Port', hint: 'Change it if something else uses the default.', narrow: true },
           { type: 'toggle', path: 'activities.allowBrowser', label: 'Allow web pages', hint: 'Off means a page in your browser cannot post into the island. Leave it off unless you use a bookmarklet.' },
+          { type: 'number', path: 'activities.keep', label: 'Keep in history', hint: 'How many recent activities the bell keeps on disk. 5–500.', narrow: true },
+          { type: 'toggle', path: 'activities.showOnPush', label: 'Announce new ones', hint: 'Slide a card in when something arrives. The bell still records it.' },
           {
             type: 'button', label: 'Test', hint: 'Sends one so you can see it.',
             buttonLabel: 'Send a test activity',
@@ -383,7 +385,7 @@ function buildPanes() {
           },
           {
             type: 'note',
-            html: 'Fields: <b>title</b> (required), subtitle, icon, progress (0–1), tone (info, success, warning, error), durationMs.'
+            html: 'Fields: <b>title</b> (required), subtitle, icon, progress (0–1), tone (info, success, warning, error), durationMs,<br><b>group</b> (repeat pushes update one row), <b>priority</b> (0 passive, 1 normal, 2 time-sensitive), <b>open</b>.<br>The bell keeps the last activities on disk. <b>GET /activities</b> returns them as JSON.'
           }
         ]
       }
@@ -393,7 +395,7 @@ function buildPanes() {
     id: 'about',
     title: 'About',
     icon: 'ⓘ',
-    desc: 'Everything lives locally. Nothing leaves your machine except the calendar request.',
+    desc: 'Everything lives locally. Nothing leaves your machine except the calendar and, if you switch it on, the assistant.',
     groups: [
       {
         title: 'Dynamic Island',

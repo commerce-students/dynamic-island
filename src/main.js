@@ -13,6 +13,7 @@ const { spawn } = require('child_process')
 const settings = require('./config')
 const calendar = require('./lib/calendar')
 const activities = require('./lib/activities')
+const { createStore } = require('./lib/activity-store')
 const ai = require('./lib/ai')
 
 const SHOT_MODE = process.argv.includes('--shot')
@@ -55,6 +56,7 @@ let tray = null
 let mediaBridge = null
 let volumeBridge = null
 let activityServer = null
+let activityStore = null
 let calendarTimer = null
 let clipboardTimer = null
 let lastClipboard = null
@@ -136,7 +138,10 @@ function createIsland() {
     island.showInactive()
   })
 
-  island.webContents.on('did-finish-load', () => sendConfigToIsland())
+  island.webContents.on('did-finish-load', () => {
+    sendConfigToIsland()
+    sendActivityState()
+  })
   island.on('closed', () => { island = null })
 }
 
@@ -279,7 +284,7 @@ ipcMain.handle('settings:reset', (event) => {
 
 ipcMain.handle('settings:clear-api-key', (event) => {
   if (!fromOwnWindow(event)) return settings.publicConfig()
-  settings.set({ ai: { apiKey: '' } })
+  settings.set({ ai: { apiKey: '', apiKeyEnc: '' } })
   const conf = settings.publicConfig()
   if (prefs && !prefs.isDestroyed()) prefs.webContents.send('settings:changed', conf)
   return conf
@@ -438,6 +443,32 @@ function openTarget(target) {
 }
 
 ipcMain.on('activity:open', (_event, target) => openTarget(target))
+
+ipcMain.handle('activity:list', (event) => {
+  if (!fromOwnWindow(event)) return { items: [], unread: 0 }
+  return activityState()
+})
+
+ipcMain.handle('activity:dismiss', (event, id) => {
+  if (!fromOwnWindow(event)) return activityState()
+  activityStoreRef().dismiss(String(id || ''))
+  sendActivityState()
+  return activityState()
+})
+
+ipcMain.handle('activity:read-all', (event) => {
+  if (!fromOwnWindow(event)) return activityState()
+  activityStoreRef().markAllRead()
+  sendActivityState()
+  return activityState()
+})
+
+ipcMain.handle('activity:clear', (event) => {
+  if (!fromOwnWindow(event)) return activityState()
+  activityStoreRef().clear()
+  sendActivityState()
+  return activityState()
+})
 ipcMain.on('app:focus', (_event, name) => sendToMedia('focus:' + String(name || '')))
 ipcMain.on('app:reveal', (_event, target) => {
   const map = {
@@ -842,12 +873,43 @@ function startCalendarLoop() {
   calendarTimer = setInterval(refreshCalendar, 10 * 60 * 1000)
 }
 
+function activityStoreRef() {
+  if (!activityStore) {
+    activityStore = createStore({
+      file: path.join(app.getPath('userData'), 'activities.json'),
+      limit: () => (settings.get().activities || {}).keep
+    })
+    activityStore.load()
+  }
+  return activityStore
+}
+
+function activityState() {
+  const store = activityStoreRef()
+  return { items: store.all(), unread: store.unread() }
+}
+
+function sendActivityState() {
+  pushToIsland({ type: 'activity-state', ...activityState() })
+}
+
 function pushActivity(activity) {
-  pushToIsland({ type: 'activity', ...activity, at: Date.now() })
+  const store = activityStoreRef()
+  const record = store.push(activity)
+  if (!record) return
+
+  const conf = settings.get().activities || {}
+  if (conf.showOnPush !== false) {
+    pushToIsland({ type: 'activity', ...record, at: Date.now() })
+  }
+  sendActivityState()
+  if (prefs && !prefs.isDestroyed()) prefs.webContents.send('activity:fired', record)
 }
 
 function startActivities() {
   const conf = settings.get().activities
+  activityStoreRef()
+
   if (!conf.enabled) {
     sendConfigToIsland()
     return
@@ -855,13 +917,16 @@ function startActivities() {
   activityServer = activities.start({
     port: conf.port,
     allowBrowser: !!conf.allowBrowser,
-    onActivity: (activity) => {
-      pushActivity(activity)
-      if (prefs && !prefs.isDestroyed()) prefs.webContents.send('activity:fired', activity)
+    onActivity: (activity) => pushActivity(activity),
+    onClear: () => {
+      activityStoreRef().clear()
+      pushToIsland({ type: 'activity', clear: true })
+      sendActivityState()
     },
-    onClear: () => pushToIsland({ type: 'activity', clear: true })
+    onList: () => activityState()
   })
   sendConfigToIsland()
+  sendActivityState()
 }
 
 function clipboardFingerprint(buffer) {

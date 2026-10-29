@@ -77,6 +77,10 @@
                     <span id="battery-text">--%</span>
                   </div>
                   <div class="panel-actions">
+                    <button class="icon-btn" id="open-activity" aria-label="Activity centre">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                      <span class="badge" id="activity-badge" hidden>0</span>
+                    </button>
                     <button class="icon-btn" id="open-stats" aria-label="System stats">
                       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 19v-6M12 19V5M19 19v-9"/></svg>
                     </button>
@@ -117,6 +121,15 @@
                 <span class="stats-value" id="stats-mem">--</span>
               </div>
               <div class="stats-foot" id="stats-foot">Reading…</div>
+            </div>
+
+            <div class="panel-activity" id="panel-activity">
+              <div class="activity-head">
+                <span class="activity-heading">Activity</span>
+                <button class="link-btn" id="activity-clear">Clear all</button>
+              </div>
+              <div class="activity-list" id="activity-list"></div>
+              <div class="activity-empty" id="activity-empty">Nothing yet.<br><span>Anything that posts to the local API lands here.</span></div>
             </div>
           </div>
         </section>

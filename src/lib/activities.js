@@ -112,11 +112,13 @@ function normalise(payload) {
 
   return {
     id: text(payload.id, 40).trim() || null,
+    group: text(payload.group, 60).trim() || null,
     title,
     subtitle,
     icon,
     progress,
     tone: ['info', 'success', 'warning', 'error'].includes(payload.tone) ? payload.tone : 'info',
+    priority: [0, 1, 2].includes(payload.priority) ? payload.priority : 1,
     durationMs: Number.isFinite(duration) ? Math.max(1200, Math.min(60000, duration)) : 6000,
     open: text(payload.open, 300).trim() || null,
 
@@ -141,6 +143,7 @@ POST /push   {"title":"Build finished","subtitle":"in 42s","icon":"*","progress"
              "layout": { "compactLeading": {...}, "compactTrailing": {...}, "minimal": {...},
                          "expanded": { "leading": {...}, "trailing": {...}, "center": {...}, "bottom": {...} } }
 POST /clear
+GET  /activities   recent history, newest first (grouped repeats carry a count)
 GET  /health
 
 Requires Content-Type: application/json. Browser-origin requests are refused
@@ -156,7 +159,7 @@ function normalisePort(value) {
 /**
  * Builds the server without listening, so tests can drive it directly.
  */
-function createServer({ onActivity = () => {}, onClear = () => {}, allowBrowser = false, now = Date.now } = {}) {
+function createServer({ onActivity = () => {}, onClear = () => {}, onList = null, allowBrowser = false, now = Date.now } = {}) {
   const hits = []
 
   function rateLimited() {
@@ -241,6 +244,12 @@ function createServer({ onActivity = () => {}, onClear = () => {}, allowBrowser 
         return
       }
 
+      if (req.method === 'GET' && url === '/activities') {
+        const state = onList ? onList() : { items: [], unread: 0 }
+        json(res, 200, { ok: true, ...state })
+        return
+      }
+
       if (req.method === 'GET' && url === '/health') {
         json(res, 200, { ok: true, app: 'dynamic-island' })
         return
@@ -266,9 +275,9 @@ function createServer({ onActivity = () => {}, onClear = () => {}, allowBrowser 
   })
 }
 
-function start({ port = 39321, onActivity, onClear, allowBrowser = false } = {}) {
+function start({ port = 39321, onActivity, onClear, onList, allowBrowser = false } = {}) {
   const wanted = normalisePort(port)
-  const server = createServer({ onActivity, onClear, allowBrowser })
+  const server = createServer({ onActivity, onClear, onList, allowBrowser })
 
   server.on('error', (err) => {
     console.error('[activities]', err.message)

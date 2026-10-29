@@ -87,10 +87,35 @@ IPC handlers trusted whatever called them.
 
 ### 8. No tests, no CI check — process
 
-- `npm test` → `node --test`, 24 tests, zero dependencies.
+- `npm test` → `node --test`, 31 tests, zero dependencies.
 - `.github/workflows/ci.yml`: syntax-checks every `src`/`scripts` JS file, then
   runs the tests on push and pull request.
 - `release.yml` refuses to build an installer if the tests fail.
+
+### 9. The API key sat in plain text on disk — high
+
+`safeStorage` (DPAPI on Windows) now seals it.
+
+- `src/lib/keyvault.js`: `seal` / `open` / `migrateKey`, with the crypto backend
+  injected so it is testable outside Electron.
+- `src/config.js`: `load()` migrates an existing plaintext key on first boot,
+  `save()` writes the `enc:v1:` blob and never the plaintext, `reset()` clears
+  both fields.
+- `hasApiKey` still drives the UI; **Remove key** clears `apiKey` and `apiKeyEnc`.
+- Verified: `settings.json` now holds `"apiKey": ""` and an `enc:v1:` blob, and
+  Gemini still answers after a restart (7.9 s cold, 1.9 s warm).
+
+### 10. A Live Activity vanished when the card did — product
+
+- `src/lib/activity-store.js`: last N (default 50) records on disk, atomic write,
+  corrupt files moved to `activities.json.broken`, grouping by `group`, repeat
+  counter, `priority` 0–2, unread state, dismiss and clear.
+- `GET /activities` exposes the same history to scripts.
+- The island grew a bell with an unread badge and a scrollable centre; opening it
+  marks everything read, `×` dismisses one, **Clear all** empties it.
+- Verified: four pushes → badge 3, grouped build `×2`, time-sensitive pinned to
+  the top, dismiss and clear both update the DOM, and the record survived a full
+  app restart.
 
 ---
 
@@ -99,9 +124,7 @@ IPC handlers trusted whatever called them.
 | Item | Why it is still open |
 |---|---|
 | **Python sidecars are supervised, not sandboxed** | They run as the same user with full filesystem access. Fixing it properly means dropping privileges or moving to a native addon; neither is a one-evening change. Crash-restart already exists. |
-| **Settings are JSON, not DPAPI** | The API key is stored in `%APPDATA%\Dynamic Island\settings.json` in plain text. Windows DPAPI (`safeStorage.encryptString`) is the right home for it; it needs a migration path for existing installs, so it is the next security item rather than a rushed one. |
 | **No code signing** | Out of scope without a certificate; SmartScreen will warn. |
-| **Activity cards are not persisted** | A restart drops them. By design for now. |
 | **`zoom` is used for island scale** | Works in Chromium, is not the same as real layout scaling; a transform-based renderer would be sharper on fractional DPI. |
 | **Linux port** | Not written. Needs MPRIS over `gdbus`, `pactl`/`parec`, and a click-through workaround; cannot be built or tested on Windows. |
 | **Notification mirroring, Windows Clock timers, call answering** | No public Windows API. The Live Activities endpoint is the honest substitute. |
@@ -112,7 +135,7 @@ IPC handlers trusted whatever called them.
 ## How this was verified
 
 ```powershell
-npm test                       # 24/24
+npm test                       # 44/44
 npm run dist                   # installer builds
 # dev run, then:
 curl -s http://127.0.0.1:39321/health

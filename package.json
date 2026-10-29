@@ -1,7 +1,7 @@
 {
   "name": "dynamic-island",
   "productName": "Dynamic Island",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "description": "A living Dynamic Island for Windows - now playing, volume, timers, clipboard, calendar and live activities in one animated pill.",
   "main": "src/main.js",
   "author": "Lucki",

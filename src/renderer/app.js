@@ -17,6 +17,7 @@ const SIZES = {
   compact: { w: 150, h: 36 },
   music: { w: 396, h: 142 },
   panel: { w: 372, h: 152 },
+  activityPanel: { w: 372, h: 316 },
   timer: { w: 310, h: 136 },
   timerMini: { w: 150, h: 36 },
   transient: { w: 268, h: 36 },
@@ -49,6 +50,8 @@ const state = {
   events: [],
   announced: new Set(),
   activities: [],
+  activityHistory: [],
+  activityUnread: 0,
   call: null,
   system: { focus: false, sharing: null },
   expanded: false,
@@ -140,7 +143,18 @@ function resolveView() {
       : { view: 'compact', size: SIZES.compact, mini: false }
   }
 
-  if (state.panelOpen) return { view: 'panel', size: SIZES.panel, mini: false }
+  if (state.panelOpen) {
+    if (state.panelMode === 'activity') {
+      const rows = state.activityHistory.length
+      const wanted = rows ? 48 + rows * 46.5 : 160
+      return {
+        view: 'panel',
+        size: { w: SIZES.activityPanel.w, h: Math.max(120, Math.min(SIZES.activityPanel.h, Math.round(wanted))) },
+        mini: false
+      }
+    }
+    return { view: 'panel', size: SIZES.panel, mini: false }
+  }
   return { view: 'idle', size: SIZES.idle, mini: false }
 }
 
@@ -246,8 +260,104 @@ function renderPanel() {
   const inner = $('#panel-home').parentElement
   inner.classList.toggle('mode-timer', state.panelMode === 'timer')
   inner.classList.toggle('mode-stats', state.panelMode === 'stats')
+  inner.classList.toggle('mode-activity', state.panelMode === 'activity')
   if (state.panelMode === 'stats') paintStats()
+  if (state.panelMode === 'activity') renderActivityCentre()
+  paintActivityBadge()
   renderNextEvent()
+}
+
+/* ---------------------------- activity centre ---------------------------- */
+
+function timeAgo(at) {
+  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000))
+  if (seconds < 45) return 'just now'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.round(hours / 24)}d ago`
+}
+
+function paintActivityBadge() {
+  const badge = $('#activity-badge')
+  if (!badge) return
+  const unread = state.activityUnread
+  badge.hidden = !unread
+  badge.textContent = unread > 9 ? '9+' : String(unread)
+}
+
+function renderActivityCentre() {
+  const list = $('#activity-list')
+  const empty = $('#activity-empty')
+  const clear = $('#activity-clear')
+  if (!list) return
+
+  list.textContent = ''
+  const items = state.activityHistory
+  empty.hidden = items.length > 0
+  list.hidden = items.length === 0
+  clear.disabled = items.length === 0
+
+  for (const item of items) {
+    const row = document.createElement('div')
+    row.className = 'act-row' + (item.read ? '' : ' unread')
+    row.tabIndex = 0
+
+    const icon = document.createElement('div')
+    icon.className = 'act-icon' + (item.tone && item.tone !== 'info' ? ` tone-${item.tone}` : '')
+    icon.textContent = item.icon || '*'
+
+    const body = document.createElement('div')
+    body.className = 'act-body'
+    const title = document.createElement('div')
+    title.className = 'act-title'
+    title.textContent = item.title
+    body.append(title)
+
+    const meta = document.createElement('div')
+    meta.className = 'act-meta'
+    const bits = [timeAgo(item.at)]
+    if (item.subtitle) bits.push(item.subtitle)
+    if (item.count > 1) bits.push(`×${item.count}`)
+    if (item.priority === 2) bits.push('time-sensitive')
+    meta.textContent = bits.join(' · ')
+    body.append(meta)
+
+    const kill = document.createElement('button')
+    kill.className = 'act-kill'
+    kill.textContent = '×'
+    kill.title = 'Dismiss'
+    kill.addEventListener('click', async (event) => {
+      event.stopPropagation()
+      const next = await window.island.activityDismiss(item.id)
+      if (next) applyActivityState(next)
+      cue('tap')
+    })
+
+    const open = () => {
+      if (item.open) window.island.open(item.open)
+      cue('tap')
+    }
+    row.addEventListener('click', open)
+    row.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        open()
+      }
+    })
+
+    row.append(icon, body, kill)
+    list.append(row)
+  }
+}
+
+function applyActivityState(payload) {
+  if (!payload) return
+  if (Array.isArray(payload.items)) state.activityHistory = payload.items
+  if (typeof payload.unread === 'number') state.activityUnread = payload.unread
+  paintActivityBadge()
+  if (pill.dataset.view === 'panel' && state.panelMode === 'activity') renderActivityCentre()
 }
 
 function nextEvent() {
@@ -1027,6 +1137,27 @@ statsChip.addEventListener('click', (event) => {
   cue('tap')
 })
 
+const bellChip = $('#open-activity')
+bellChip.addEventListener('click', (event) => {
+  event.stopPropagation()
+  const opening = state.panelMode !== 'activity'
+  state.panelMode = opening ? 'activity' : 'home'
+  render()
+  if (opening) {
+    // Opening the centre counts as seeing everything in it.
+    window.island.activityRead().then((next) => { if (next) applyActivityState(next) })
+    window.island.activityList().then((next) => { if (next) applyActivityState(next) })
+  }
+  cue('tap')
+})
+
+$('#activity-clear').addEventListener('click', async (event) => {
+  event.stopPropagation()
+  const next = await window.island.activityClear()
+  if (next) applyActivityState(next)
+  cue('tap')
+})
+
 /* ---------------------------- config ---------------------------- */
 
 function applyPillBackground() {
@@ -1048,6 +1179,7 @@ function applyConfig(settings) {
   document.body.classList.toggle('pos-bottom', settings.general?.position === 'bottom')
   aiChip.hidden = !(settings.ai && settings.ai.enabled)
   statsChip.hidden = !(settings.widgets && settings.widgets.system)
+  bellChip.hidden = !(settings.activities && settings.activities.enabled !== false)
   applyPillBackground()
 
   render()
@@ -1178,6 +1310,12 @@ window.island.onData((msg) => {
       return
     }
     showActivity(msg)
+    return
+  }
+
+  if (msg.type === 'activity-state') {
+    applyActivityState(msg)
+    return
   }
 })
 
