@@ -96,6 +96,25 @@ const DEFAULTS = {
     apiKey: '',
     apiKeyEnc: '',
     maxTokens: 600
+  },
+  search: {
+    enabled: true,
+    hotkey: 'Control+Alt+Space',
+    apps: true,
+    files: true,
+    maxResults: 24
+  },
+  inbox: {
+    // Watch the folder LocalSend (or anything else) saves into.
+    enabled: true,
+    folder: ''
+  },
+  localsend: {
+    // Off by default: this listens on the LAN, so it is opt-in.
+    receive: false,
+    port: 53318,
+    name: 'Dynamic Island',
+    autoAccept: false
   }
 }
 

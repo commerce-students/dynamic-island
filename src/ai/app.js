@@ -175,6 +175,14 @@ document.addEventListener('keydown', (event) => {
 
 wireChips()
 
+// A question typed into Spotlight arrives here already asked.
+window.ai.onPrefill((text) => {
+  if (!text || busy) return
+  els.input.value = String(text)
+  els.send.disabled = false
+  submit()
+})
+
 window.ai.info().then((data) => {
   if (!data) return
   info = data

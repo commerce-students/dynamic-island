@@ -5,8 +5,8 @@
 <h1>Dynamic Island for Windows</h1>
 
 <p><b>The black capsule from your iPhone, living at the top of your Windows screen.</b><br>
-Now playing, volume, timers, clipboard, calendar and live activities - in one
-animated pill that never gets in the way.</p>
+Now playing, volume, timers, clipboard, calendar, a Spotlight-style search and
+file transfers - in one animated pill that never gets in the way.</p>
 
 <p>
 <a href="#requirements"><img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?logo=windows&logoColor=white" alt="Platform"></a>
@@ -30,7 +30,7 @@ animated pill that never gets in the way.</p>
 
 ## Install
 
-1. Grab **`Dynamic-Island-Setup-1.5.0.exe`** from the [latest release](https://github.com/commerce-students/dynamic-island/releases/latest).
+1. Grab **`Dynamic-Island-Setup-1.8.0.exe`** from the [latest release](https://github.com/commerce-students/dynamic-island/releases/latest).
 2. Double-click it. That's the whole install - one click, no questions.
 3. The island appears at the top of your screen and starts with Windows from
    then on.
@@ -103,6 +103,44 @@ off until you turn it on, and it sends nothing until you press Enter.
   plays exactly what you chose.
 
 
+### Search (Spotlight, without an indexer)
+
+Press **`Ctrl+Alt+Space`**, or tap the magnifier in the panel, and a small search
+field drops out of the island.
+
+- **Apps and files in one list.** Every Start Menu shortcut, every Microsoft
+  Store app, plus Desktop, Documents, Downloads and Pictures, four folders deep.
+- **Typing is ranked by intent.** An exact name wins, then a prefix, then a word
+  that starts with what you typed, then an acronym (`vsc` → Visual Studio Code),
+  then anything else, then a loose letter match.
+- **It opens what you tap.** Enter opens the highlighted result, `Ctrl+Enter`
+  shows it in Explorer, arrow keys move, `Esc` closes.
+- **Findable immediately.** The walk is capped at 6,000 files and cached for 90
+  seconds, and opening the panel refreshes an ageing index, so a file you just
+  downloaded shows up on the first try.
+- **Nothing leaves the PC.** No indexer service, no file names sent anywhere.
+
+### Files from your phone (LocalSend)
+
+Two independent ways to see a transfer land, both in Settings → **Files & LocalSend**:
+
+- **Folder watcher, always on.** Point it at the folder LocalSend saves into
+  (Downloads by default). When a file finishes arriving - not while it is still
+  copying - the island shows a card with its name, size and folder, and a tap
+  opens it. Office lock files, `.part`, `.crdownload` and OS junk are ignored.
+- **Be a LocalSend receiver itself.** Switch it on and this PC appears in the
+  LocalSend app on your phone. A device sends you something, the island shows a
+  card and a small window asks **Accept** or **Decline** with the file list and
+  total size. Enter accepts, Esc declines, closing the window declines.
+
+The receiver speaks the LocalSend v2 protocol but announces plain HTTP, so there
+is no self-signed certificate to click through; it binds port **53318** by
+default so it can coexist with the LocalSend app on 53317. Nothing is accepted
+unless you accept it (unless you tick **Accept without asking**), every file name
+is sanitised before it touches the disk, incoming files never overwrite an
+existing one, and a declared size that does not match the bytes received is
+thrown away.
+
 ### The details
 
 - **Spring physics.** Every shape change is integrated with a damped spring
@@ -135,7 +173,12 @@ off until you turn it on, and it sends nothing until you press Enter.
   timer instead, and it rings with whatever sound you chose.
 - **Answering calls.** Windows has no public API for accepting a call from a
   third-party app, so the call banner jumps to the app rather than offering a
-  button that would do nothing.
+  button that would do nothing. Answering calls from inside the island was left
+  out for the same reason - anything else would be UI automation that breaks
+  without warning.
+- **Sending files to a phone from the island.** The LocalSend app already sends
+  well on both ends; the island only receives, rather than reimplementing a
+  second sender.
 
 ## Settings
 
@@ -155,6 +198,8 @@ edit, no restarts.
 | **Calendar** | Your private iCal URL, how far ahead to warn you |
 | **Timer** | Alarm preset or your own song, volume, repeat, preview |
 | **AI** | On/off, provider, model, API key, test |
+| **Search** | Enable, shortcut, what it looks through, result count |
+| **Files & LocalSend** | Which folder to watch, receiver on/off, network name, port, auto-accept |
 | **Live Activities** | Port, default duration, whether to play a sound |
 | **About** | Version, settings file, app folder |
 
@@ -243,6 +288,11 @@ Bodies with a UTF-8 BOM are accepted, because PowerShell writes one by default.
   registry keys that Windows itself maintains.
 - It never records audio, never reads clipboard history, and never keeps copied
   text.
+- **Search reads file names, never file contents.** The list is built in memory,
+  capped at 6,000 entries and thrown away when the app closes.
+- **The LocalSend receiver is opt-in** and, when on, only reachable from your own
+  network. Nothing is accepted without your click, and the card that says a file
+  arrived is the only thing it publishes.
 - The only automatic outbound request is the calendar URL you paste in yourself.
   If you switch the assistant on, a message you send goes to the provider you
   picked (and to nowhere else). With **Ollama** nothing leaves the machine.
@@ -264,14 +314,22 @@ The app is built to the Electron checklist rather than around it:
   popups are denied, and http(s) links are handed to your real browser.
 - Every permission request (microphone, camera, screen, notifications) is denied:
   the app has no feature that needs one.
-- Settings changes and AI calls are only accepted from the app's own three
-  windows, checked by `webContents` id, not by anything inside the payload.
+- Settings changes, AI calls, searches and transfer decisions are only accepted
+  from the app's own five windows, checked by `webContents` id, not by anything
+  inside the payload.
 - The settings merge refuses `__proto__`, `constructor` and `prototype`, so a
   crafted patch cannot pollute `Object.prototype`.
 - A tap on a Live Activity can open `http(s):`, `mailto:` or a real path. Every
   other protocol handler is ignored.
-- `npm test` covers the network boundary and the merge: 24 tests, no test
-  framework, no dependencies.
+- The search window can only open items the main process just returned for the
+  query you typed, so a forged id opens nothing.
+- Nothing is ever transferred without a decision: the LocalSend receiver holds
+  the sender's request until you press Accept, declines on error, on timeout and
+  on window close, writes to a `.part` file and renames it only after the byte
+  count matches, refuses `..` and reserved names, and never overwrites a file.
+- `npm test` covers the network boundary, the merge, the search ranker and
+  walker, the folder watcher, and real LocalSend transfers over HTTP: **100
+  tests**, no test framework, no dependencies.
 
 Details and the remaining hardening work are in [`docs/audit.md`](docs/audit.md).
 
@@ -321,6 +379,9 @@ More in [CONTRIBUTING.md](CONTRIBUTING.md).
 | No album art in the browser | Chromium does not publish artwork to the media session. Real players (Spotify, iTunes, Windows Media Player) do. |
 | Mic/camera never lights up | Only apps that go through the Windows privacy layer are reported. |
 | Calendar shows nothing | Use the **secret iCal address** from Google Calendar → Settings → *Secret address in iCal format*. |
+| `Ctrl+Alt+Space` does nothing | Another app already owns that shortcut. Change it in Settings → Search. |
+| Search cannot find a file | Only Desktop, Documents, Downloads and Pictures are walked, four folders deep. Move the file or point LocalSend at a folder inside them. |
+| My phone does not list this PC | Turn on **Receive transfers** in Settings → Files & LocalSend, and make sure both devices are on the same Wi-Fi (not guest or isolated). |
 
 ## Contributing
 

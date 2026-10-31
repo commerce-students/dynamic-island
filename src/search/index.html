@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'">
+  <title>Search - Dynamic Island</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="card">
+    <div class="bar">
+      <svg class="glass" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+      <input id="q" type="text" placeholder="Search apps and files" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Search">
+      <span id="timing"></span>
+      <button id="close" title="Close (Esc)" aria-label="Close">&#10005;</button>
+    </div>
+
+    <div id="results" role="listbox" aria-label="Results"></div>
+
+    <div id="empty" hidden>
+      <div class="empty-title">Nothing found</div>
+      <div class="empty-note">Try fewer letters, or a different word.</div>
+      <button id="ask" hidden>Ask the assistant instead</button>
+    </div>
+
+    <div class="foot">
+      <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> move</span>
+      <span><kbd>&crarr;</kbd> open</span>
+      <span><kbd>Ctrl</kbd> + <kbd>&crarr;</kbd> show in folder</span>
+      <span class="grow"></span>
+      <span><kbd>esc</kbd> close</span>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

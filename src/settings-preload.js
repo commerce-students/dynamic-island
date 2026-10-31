@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('prefs', {
   checkCalendar: () => ipcRenderer.invoke('settings:calendar-check'),
   testActivity: () => ipcRenderer.invoke('settings:test-activity'),
   pickSound: () => ipcRenderer.invoke('settings:pick-sound'),
+  pickFolder: () => ipcRenderer.invoke('settings:pick-folder'),
   previewSound: () => { ipcRenderer.send('settings:preview-sound') },
   aiTest: () => ipcRenderer.invoke('ai:test'),
   clearApiKey: () => ipcRenderer.invoke('settings:clear-api-key'),

@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('island', {
   focusApp: (name) => ipcRenderer.send('app:focus', name),
   openSettings: () => ipcRenderer.send('open-settings'),
   openAi: () => ipcRenderer.send('ai:open'),
+  openSearch: () => ipcRenderer.send('search:panel'),
   onConfig: (cb) => ipcRenderer.on('config', (_e, payload) => cb(payload)),
   onData: (cb) => ipcRenderer.on('data', (_e, msg) => cb(msg)),
   onDebug: (cb) => ipcRenderer.on('debug', (_e, msg) => cb(msg)),

@@ -1137,6 +1137,16 @@ statsChip.addEventListener('click', (event) => {
   cue('tap')
 })
 
+const searchChip = $('#open-search')
+searchChip.addEventListener('click', (event) => {
+  event.stopPropagation()
+  state.panelOpen = false
+  state.panelMode = 'home'
+  render()
+  window.island.openSearch()
+  cue('tap')
+})
+
 const bellChip = $('#open-activity')
 bellChip.addEventListener('click', (event) => {
   event.stopPropagation()
@@ -1180,6 +1190,7 @@ function applyConfig(settings) {
   aiChip.hidden = !(settings.ai && settings.ai.enabled)
   statsChip.hidden = !(settings.widgets && settings.widgets.system)
   bellChip.hidden = !(settings.activities && settings.activities.enabled !== false)
+  searchChip.hidden = !(settings.search && settings.search.enabled !== false)
   applyPillBackground()
 
   render()

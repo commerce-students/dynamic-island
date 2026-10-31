@@ -392,6 +392,72 @@ function buildPanes() {
     ]
   },
   {
+    id: 'search',
+    title: 'Search',
+    icon: '⌕',
+    desc: 'A Spotlight-style search window: Start Menu apps plus the folders you actually use.',
+    groups: [
+      {
+        title: 'Shortcut',
+        rows: [
+          { type: 'toggle', path: 'search.enabled', label: 'Enable search', hint: 'Adds a magnifier to the panel and a global shortcut.' },
+          { type: 'text', path: 'search.hotkey', label: 'Shortcut', placeholder: 'Control+Alt+Space', medium: true, hint: 'Electron accelerator syntax, e.g. Control+Alt+Space.' }
+        ]
+      },
+      {
+        title: 'What it looks through',
+        rows: [
+          { type: 'toggle', path: 'search.apps', label: 'Apps', hint: 'Every shortcut in the Start Menu, plus Microsoft Store apps.' },
+          { type: 'toggle', path: 'search.files', label: 'Files', hint: 'Desktop, Documents, Downloads and Pictures, four folders deep.' },
+          { type: 'number', path: 'search.maxResults', label: 'Results', hint: '1–50. Fewer results is faster to read.', narrow: true }
+        ]
+      },
+      {
+        title: 'Good to know',
+        rows: [
+          { type: 'note', html: 'The walk is capped at 6,000 files and rebuilt at most every 90 seconds, so the window opens instantly.<br>Nothing is indexed in the background, and no file name ever leaves your PC.' }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'transfer',
+    title: 'Files & LocalSend',
+    icon: '⇩',
+    desc: 'See files arriving from your phone, and optionally let this PC receive LocalSend transfers itself.',
+    groups: [
+      {
+        title: 'Incoming folder',
+        rows: [
+          { type: 'toggle', path: 'inbox.enabled', label: 'Announce new files', hint: 'A card appears when a file finishes landing in this folder.' },
+          { type: 'text', path: 'inbox.folder', label: 'Folder', placeholder: 'Downloads (default)', wide: true },
+          {
+            type: 'button',
+            label: 'Pick',
+            hint: 'Where LocalSend saves what it receives.',
+            buttonLabel: 'Choose folder…',
+            onClick: async () => {
+              const dir = await api.pickFolder()
+              if (!dir) return
+              await api.set({ inbox: { folder: dir } })
+              showToast('Watching that folder')
+            }
+          }
+        ]
+      },
+      {
+        title: 'LocalSend receiver',
+        rows: [
+          { type: 'toggle', path: 'localsend.receive', label: 'Receive transfers', hint: 'Off by default: this listens on your local network.' },
+          { type: 'text', path: 'localsend.name', label: 'Name on the network', placeholder: 'Dynamic Island', medium: true },
+          { type: 'number', path: 'localsend.port', label: 'Port', hint: '53318 by default, so it does not fight the LocalSend app itself.', narrow: true },
+          { type: 'toggle', path: 'localsend.autoAccept', label: 'Accept without asking', hint: 'Only if you trust every device on this network.' },
+          { type: 'note', html: 'When a device sends you something, the island shows a card and a small window asks you to accept.<br>Files land in the folder above and never overwrite an existing one.' }
+        ]
+      }
+    ]
+  },
+  {
     id: 'about',
     title: 'About',
     icon: 'ⓘ',

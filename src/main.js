@@ -14,6 +14,9 @@ const settings = require('./config')
 const calendar = require('./lib/calendar')
 const activities = require('./lib/activities')
 const { createStore } = require('./lib/activity-store')
+const searchLib = require('./lib/search')
+const { createWatcher, describeSize } = require('./lib/inbox')
+const { createReceiver: createLocalSendReceiver } = require('./lib/localsend')
 const ai = require('./lib/ai')
 
 const SHOT_MODE = process.argv.includes('--shot')
@@ -57,6 +60,16 @@ let mediaBridge = null
 let volumeBridge = null
 let activityServer = null
 let activityStore = null
+let searchWin = null
+let searchEngine = null
+let searchHits = new Map()
+let searchSeq = 0
+let uwpRequested = false
+let inboxWatcher = null
+let localSend = null
+let transferWin = null
+let pendingTransfer = null
+const recentTransfers = new Map()
 let calendarTimer = null
 let clipboardTimer = null
 let lastClipboard = null
@@ -178,6 +191,15 @@ ipcMain.handle('settings:pick-sound', async () => {
   return result.filePaths[0]
 })
 
+ipcMain.handle('settings:pick-folder', async () => {
+  const result = await dialog.showOpenDialog(prefs || undefined, {
+    title: 'Choose a folder',
+    properties: ['openDirectory', 'createDirectory']
+  })
+  if (result.canceled || !result.filePaths.length) return null
+  return result.filePaths[0]
+})
+
 ipcMain.on('settings:preview-sound', () => {
   if (island && !island.isDestroyed()) island.webContents.send('data', { type: 'preview-sound' })
 })
@@ -241,7 +263,8 @@ function openSettings() {
  */
 function fromOwnWindow(event) {
   const id = event && event.sender ? event.sender.id : -1
-  return [island, prefs, aiWin].some((win) => win && !win.isDestroyed() && win.webContents.id === id)
+  return [island, prefs, aiWin, searchWin, transferWin]
+    .some((win) => win && !win.isDestroyed() && win.webContents.id === id)
 }
 
 ipcMain.handle('settings:get', (event) => {
@@ -379,6 +402,7 @@ function openAiWindow() {
 }
 
 ipcMain.on('ai:open', () => openAiWindow())
+ipcMain.on('search:panel', () => openSearch())
 ipcMain.on('ai:close', () => { if (aiWin && !aiWin.isDestroyed()) aiWin.hide() })
 ipcMain.on('ai:open-settings', () => {
   if (aiWin && !aiWin.isDestroyed()) aiWin.hide()
@@ -417,6 +441,450 @@ ipcMain.handle('ai:test', async (event) => {
   return { ok: false, error: result.error }
 })
 
+/* ------------------------------------------------------------------ *
+ * Search
+ *
+ * The scan lives in src/lib/search.js. It is capped, cached for 90 s and
+ * rebuilt in the background, because an indexer is a bigger promise than
+ * this app needs to make.
+ * ------------------------------------------------------------------ */
+
+function startMenuDirs() {
+  const dirs = []
+  try {
+    dirs.push(path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'))
+  } catch { /* no roaming profile */ }
+  const programData = process.env.ProgramData || 'C:\\ProgramData'
+  dirs.push(path.join(programData, 'Microsoft', 'Windows', 'Start Menu', 'Programs'))
+  return dirs.filter((dir) => { try { return fs.existsSync(dir) } catch { return false } })
+}
+
+function userFolders() {
+  const roots = []
+  for (const name of ['desktop', 'documents', 'downloads', 'pictures']) {
+    try {
+      const dir = app.getPath(name)
+      if (dir && fs.existsSync(dir)) roots.push(dir)
+    } catch { /* folder not redirected */ }
+  }
+  return roots
+}
+
+/**
+ * `Get-StartApps` is the only way to see Store apps: they have no shortcut on
+ * disk. It takes a few hundred milliseconds, so it runs once, in the
+ * background, and merges into whatever the disk scan already found.
+ */
+function loadStoreApps() {
+  if (uwpRequested || process.platform !== 'win32') return
+  uwpRequested = true
+
+  let child
+  try {
+    child = spawn('powershell', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      'Get-StartApps | Select-Object Name,AppID | ConvertTo-Json -Compress'
+    ], { windowsHide: true })
+  } catch {
+    return
+  }
+
+  let output = ''
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => {
+    output += chunk
+    if (output.length > 4 * 1024 * 1024) { try { child.kill() } catch { /* gone */ } }
+  })
+  child.on('error', () => { /* no PowerShell: file shortcuts still work */ })
+  child.on('close', () => {
+    const apps = searchLib.parseStartApps(output.trim())
+    if (apps.length) searchEngineRef().mergeApps(apps)
+  })
+
+  const guard = setTimeout(() => { try { child.kill() } catch { /* gone */ } }, 20000)
+  if (guard.unref) guard.unref()
+}
+
+function searchEngineRef() {
+  if (searchEngine) return searchEngine
+  const conf = settings.get().search || {}
+  searchEngine = searchLib.createIndex({
+    appDirs: conf.apps === false ? [] : startMenuDirs(),
+    fileRoots: conf.files === false ? [] : userFolders(),
+    maxDepth: 4,
+    maxFiles: 6000,
+    ttlMs: 90 * 1000,
+    onError: (where, err) => {
+      if (process.env.ISLAND_DEBUG) console.error('[search]', where, err.message)
+    }
+  })
+  return searchEngine
+}
+
+/** Runs a query and remembers the hits, so a tap can only open what we showed. */
+function searchPayload(text) {
+  const engine = searchEngineRef()
+  const conf = settings.get().search || {}
+  const limit = Math.max(1, Math.min(50, Number(conf.maxResults) || 24))
+  const found = engine.query(String(text || ''), limit)
+
+  const items = found.map((item) => ({ ...item, id: `s${++searchSeq}` }))
+  searchHits = new Map(items.map((item) => [item.id, item]))
+
+  return {
+    items: items.map((item) => ({ id: item.id, kind: item.kind, name: item.name, detail: item.detail }))
+  }
+}
+
+async function launchSearchItem(item) {
+  if (!item) return false
+
+  // Store apps are addressed by an AppUserModelID, not a path.
+  if (item.uwp && item.launch) {
+    try {
+      await shell.openExternal(item.launch)
+      return true
+    } catch {
+      try {
+        spawn('explorer.exe', [item.launch], { detached: true, stdio: 'ignore' }).unref()
+        return true
+      } catch {
+        return false
+      }
+    }
+  }
+
+  if (!item.path) return false
+  try {
+    if (!fs.existsSync(item.path)) return false
+    const err = await shell.openPath(item.path)
+    return !err
+  } catch {
+    return false
+  }
+}
+
+function createSearchWindow() {
+  if (searchWin && !searchWin.isDestroyed()) return searchWin
+
+  searchWin = new BrowserWindow({
+    width: 640,
+    height: 460,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'search', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  })
+  lockDown(searchWin)
+  searchWin.setAlwaysOnTop(true, 'floating')
+
+  searchWin.loadFile(path.join(__dirname, 'search', 'index.html'))
+    .catch((err) => console.error('[search] could not load', err))
+
+  // A search box that stays up after you click away is in the way.
+  searchWin.on('blur', () => {
+    if (searchWin && !searchWin.isDestroyed()) searchWin.hide()
+  })
+  searchWin.on('closed', () => { searchWin = null })
+
+  return searchWin
+}
+
+function placeSearchWindow(win) {
+  const bounds = islandBounds()
+  const display = screen.getDisplayNearestPoint({ x: bounds.x + Math.round(bounds.width / 2), y: bounds.y })
+  const area = display.workArea
+  const size = win.getBounds()
+  const x = Math.round(bounds.x + bounds.width / 2 - size.width / 2)
+  const y = Math.round(Math.max(area.y + 8, bounds.y + 48))
+  win.setBounds({ x, y, width: size.width, height: size.height })
+}
+
+function openSearch() {
+  const win = createSearchWindow()
+  placeSearchWindow(win)
+
+  const reveal = () => {
+    if (!win || win.isDestroyed()) return
+    win.show()
+    win.focus()
+    win.webContents.send('search:show')
+  }
+
+  if (win.webContents.isLoadingMainFrame()) win.webContents.once('did-finish-load', reveal)
+  else reveal()
+
+  if (!uwpRequested) loadStoreApps()
+  // Warm the next query while the user is still typing the first one, and
+  // refresh an index that has started to age so a file you just downloaded is
+  // findable on the first try, not 90 seconds later.
+  try {
+    const engine = searchEngineRef()
+    if (Date.now() - engine.stats().builtAt > 10 * 1000) {
+      setTimeout(() => { try { engine.build() } catch { /* the query retries */ } }, 0)
+    }
+  } catch { /* first query will retry */ }
+}
+
+ipcMain.handle('search:query', (event, text) => {
+  if (!fromOwnWindow(event)) return { items: [] }
+  return searchPayload(text)
+})
+
+/** What the index actually looked at. Shown in Settings, useful when a folder is missing. */
+ipcMain.handle('search:stats', (event) => {
+  if (!fromOwnWindow(event)) return null
+  const engine = searchEngineRef()
+  return { ...engine.stats(), roots: userFolders(), appDirs: startMenuDirs() }
+})
+
+ipcMain.handle('search:open', async (event, id) => {
+  if (!fromOwnWindow(event)) return false
+  const item = searchHits.get(String(id || ''))
+  if (!item) return false
+  return launchSearchItem(item)
+})
+
+ipcMain.handle('search:reveal', (event, id) => {
+  if (!fromOwnWindow(event)) return false
+  const item = searchHits.get(String(id || ''))
+  if (!item || !item.path) return false
+  try { shell.showItemInFolder(item.path) } catch { return false }
+  return true
+})
+
+ipcMain.on('search:close', () => {
+  if (searchWin && !searchWin.isDestroyed()) searchWin.hide()
+})
+
+ipcMain.on('search:ask', (_event, text) => {
+  const question = String(text || '').trim().slice(0, 2000)
+  if (!question) return
+  if (searchWin && !searchWin.isDestroyed()) searchWin.hide()
+  openAiWindow()
+  const send = () => {
+    if (aiWin && !aiWin.isDestroyed()) aiWin.webContents.send('ai:prefill', question)
+  }
+  if (aiWin.webContents.isLoadingMainFrame()) aiWin.webContents.once('did-finish-load', send)
+  else send()
+})
+
+/* ------------------------------------------------------------------ *
+ * LocalSend: watch the save folder, and optionally become a receiver
+ * ------------------------------------------------------------------ */
+
+function inboxFolder() {
+  const conf = settings.get().inbox || {}
+  const chosen = String(conf.folder || '').trim()
+  try {
+    if (chosen && fs.statSync(chosen).isDirectory()) return chosen
+  } catch { /* fall back to Downloads */ }
+  try { return app.getPath('downloads') } catch { return '' }
+}
+
+function wasJustTransferred(filePath) {
+  const at = recentTransfers.get(filePath)
+  if (!at) return false
+  if (Date.now() - at > 120 * 1000) { recentTransfers.delete(filePath); return false }
+  return true
+}
+
+function startInboxWatch() {
+  if (inboxWatcher) { inboxWatcher.stop(); inboxWatcher = null }
+
+  const conf = settings.get().inbox || {}
+  if (!conf.enabled) return
+
+  const dir = inboxFolder()
+  if (!dir) return
+
+  inboxWatcher = createWatcher({
+    dir,
+    onChange: (item) => {
+      // The receiver already announced this one.
+      if (wasJustTransferred(item.path)) return
+      pushActivity({
+        title: `Received ${item.name}`,
+        subtitle: `${describeSize(item.size)} · ${dir}`,
+        icon: '↓',
+        tone: 'success',
+        group: 'inbox',
+        open: item.path,
+        priority: 1
+      })
+    }
+  })
+  inboxWatcher.start()
+}
+
+let transferPendingTimer = null
+
+function settleTransfer(value) {
+  if (!pendingTransfer) return
+  const pending = pendingTransfer
+  pendingTransfer = null
+  clearTimeout(transferPendingTimer)
+  transferPendingTimer = null
+  if (transferWin && !transferWin.isDestroyed() && transferWin.isVisible()) transferWin.hide()
+  pending.resolve(value)
+}
+
+function createTransferWindow() {
+  if (transferWin && !transferWin.isDestroyed()) return transferWin
+
+  transferWin = new BrowserWindow({
+    width: 430,
+    height: 420,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'transfer', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  })
+  lockDown(transferWin)
+  transferWin.setAlwaysOnTop(true, 'floating')
+
+  transferWin.loadFile(path.join(__dirname, 'transfer', 'index.html'))
+    .catch((err) => console.error('[transfer] could not load', err))
+
+  // Closing the window is a decline: the sender must never hang forever.
+  transferWin.on('close', () => settleTransfer({ accepted: false }))
+  transferWin.on('closed', () => { transferWin = null })
+
+  return transferWin
+}
+
+function showTransferWindow() {
+  if (!pendingTransfer) return
+  const win = createTransferWindow()
+  if (!win.isVisible()) { win.show(); win.focus() }
+  else win.focus()
+}
+
+function askTransfer(request) {
+  const conf = settings.get().localsend || {}
+  if (conf.autoAccept) return Promise.resolve({ accepted: true })
+
+  // The receiver only allows one session, so a queued request is a decline.
+  if (pendingTransfer) return Promise.resolve({ accepted: false })
+
+  return new Promise((resolve) => {
+    pendingTransfer = {
+      resolve,
+      fileIds: request.files.map((file) => file.id)
+    }
+
+    const win = createTransferWindow()
+    const deliver = () => {
+      if (!pendingTransfer) return
+      win.webContents.send('transfer:request', request)
+      win.show()
+      win.focus()
+    }
+    if (win.webContents.isLoadingMainFrame()) win.webContents.once('did-finish-load', deliver)
+    else deliver()
+
+    transferPendingTimer = setTimeout(() => settleTransfer({ accepted: false }), 90 * 1000)
+    if (transferPendingTimer.unref) transferPendingTimer.unref()
+
+    pushActivity({
+      title: `Incoming from ${request.sender.alias}`,
+      subtitle: `${request.files.length === 1 ? '1 file' : request.files.length + ' files'} · ${describeSize(request.total)} · tap to review`,
+      icon: '↓',
+      tone: 'warning',
+      priority: 2,
+      group: 'localsend',
+      open: 'island:transfer'
+    })
+  })
+}
+
+ipcMain.handle('transfer:answer', (event, payload) => {
+  if (!fromOwnWindow(event)) return false
+  if (!pendingTransfer) return false
+
+  const accept = Boolean(payload && payload.accept)
+  const allowed = new Set(pendingTransfer.fileIds)
+  const chosen = accept && Array.isArray(payload.fileIds)
+    ? payload.fileIds.map(String).filter((id) => allowed.has(id))
+    : []
+
+  settleTransfer(accept ? { accepted: true, fileIds: chosen.length ? chosen : [...allowed] } : { accepted: false })
+  return true
+})
+
+function startLocalSend() {
+  if (localSend) { localSend.stop(); localSend = null }
+  settleTransfer({ accepted: false })
+
+  const conf = settings.get().localsend || {}
+  if (!conf.receive) return
+
+  const dir = inboxFolder()
+  if (!dir) return
+
+  localSend = createLocalSendReceiver({
+    port: Math.max(1024, Math.min(65535, Number(conf.port) || 53318)),
+    deviceName: String(conf.name || 'Dynamic Island').slice(0, 40),
+    saveDir: dir,
+    onRequest: (request) => askTransfer(request),
+    onFile: (file) => {
+      recentTransfers.set(file.path, Date.now())
+      pushActivity({
+        title: `Received ${file.name}`,
+        subtitle: `${describeSize(file.size)} · LocalSend · ${file.sender}`,
+        icon: '↓',
+        tone: 'success',
+        group: 'inbox',
+        open: file.path,
+        priority: 1
+      })
+    },
+    onLog: (entry) => {
+      if (prefs && !prefs.isDestroyed()) prefs.webContents.send('localsend:log', entry)
+      if (entry.level === 'error') console.error('[localsend]', entry.message)
+    }
+  })
+
+  localSend.start().then((port) => {
+    console.log('[localsend] receiving on port', port)
+  }).catch((err) => {
+    localSend = null
+    pushActivity({
+      title: 'LocalSend receiver could not start',
+      subtitle: String(err && err.message || err).slice(0, 140),
+      icon: '!',
+      tone: 'error',
+      priority: 2,
+      group: 'localsend-error'
+    })
+  })
+}
+
+/** Only our own windows may answer a transfer. */
 
 /**
  * Tap a card -> open whatever it points at.
@@ -427,6 +895,10 @@ ipcMain.handle('ai:test', async (event) => {
 function openTarget(target) {
   const value = String(target || '').trim()
   if (!value) return
+
+  // Our own targets, not files or URLs.
+  if (value === 'island:transfer') { showTransferWindow(); return }
+
   try {
     if (fs.existsSync(value)) { shell.openPath(value); return }
 
@@ -544,7 +1016,7 @@ function startSystemWatch() {
 function applySettings(patch = {}) {
   const conf = settings.get()
   if (!SHOT_MODE) {
-    registerHotkey()
+    registerHotkeys()
     setAutoStart(conf.general.startWithWindows)
     placeIsland()
   }
@@ -563,6 +1035,15 @@ function applySettings(patch = {}) {
     startSystemWatch()
   }
 
+  if (patch.search) {
+    // A new folder set or a new hotkey invalidates the cached walk.
+    searchEngine = null
+    if (patch.search.enabled !== false) loadStoreApps()
+  }
+
+  if (patch.inbox) startInboxWatch()
+  if (patch.localsend) startLocalSend()
+
   sendConfigToIsland()
 
   if (prefs && !prefs.isDestroyed()) {
@@ -575,15 +1056,34 @@ function applySettings(patch = {}) {
  * Hotkey + autostart
  * ------------------------------------------------------------------ */
 
-let currentHotkey = null
+let hotkeySignature = ''
 
-function registerHotkey() {
-  const hotkey = settings.get().general.hotkey
-  if (currentHotkey === hotkey) return
+/**
+ * Two shortcuts now: one for the island, one for search. Registering them
+ * together means changing either one rebuilds both, and a clash is caught at
+ * registration rather than silently stealing the other.
+ */
+function registerHotkeys() {
+  const conf = settings.get()
+  const entries = []
+
+  const islandKey = String(conf.general.hotkey || '').trim()
+  if (islandKey) entries.push([islandKey, () => toggleVisible()])
+
+  const searchConf = conf.search || {}
+  const searchKey = String(searchConf.hotkey || '').trim()
+  if (searchConf.enabled !== false && searchKey && searchKey.toLowerCase() !== islandKey.toLowerCase()) {
+    entries.push([searchKey, () => openSearch()])
+  }
+
+  const signature = entries.map(([key]) => key).join('|')
+  if (signature === hotkeySignature) return
+
   globalShortcut.unregisterAll()
-  currentHotkey = hotkey
-  if (!hotkey) return
-  try { globalShortcut.register(hotkey, () => toggleVisible()) } catch { /* invalid */ }
+  hotkeySignature = signature
+  for (const [key, handler] of entries) {
+    try { globalShortcut.register(key, handler) } catch { /* invalid accelerator */ }
+  }
 }
 
 function startupShortcutPath() {
@@ -1131,6 +1631,15 @@ if (!app.requestSingleInstanceLock()) {
     startCalendarLoop()
     startClipboardWatch()
     startSystemWatch()
+    startInboxWatch()
+    startLocalSend()
+
+    // Search warms itself in the background: opening the panel must never
+    // wait for a disk walk.
+    setTimeout(() => {
+      try { searchEngineRef().build() } catch { /* the first query retries */ }
+    }, 2500)
+    setTimeout(loadStoreApps, 4000)
 
     if (SHOT_MODE) {
       island.webContents.once('did-finish-load', () => setTimeout(screenshotStates, 900))
@@ -1143,7 +1652,7 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     createTray()
-    registerHotkey()
+    registerHotkeys()
     setAutoStart(settings.get().general.startWithWindows)
     screen.on('display-metrics-changed', placeIsland)
     screen.on('display-added', placeIsland)
@@ -1160,6 +1669,8 @@ if (!app.requestSingleInstanceLock()) {
     globalShortcut.unregisterAll()
     clearInterval(calendarTimer)
     clearInterval(clipboardTimer)
+    if (inboxWatcher) inboxWatcher.stop()
+    if (localSend) localSend.stop()
     if (activityServer) activityServer.close()
   })
 }

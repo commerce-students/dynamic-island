@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'">
+  <title>Incoming files - Dynamic Island</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="card">
+    <header>
+      <div class="brand">
+        <span class="badge">&#8595;</span>
+        <div>
+          <div class="title">Incoming files</div>
+          <div class="sub" id="sender">From a nearby device</div>
+        </div>
+      </div>
+      <button id="close" title="Decline (Esc)" aria-label="Decline">&#10005;</button>
+    </header>
+
+    <main id="files"></main>
+
+    <div class="total">
+      <span id="count">0 files</span>
+      <span id="size">0 B</span>
+    </div>
+
+    <footer>
+      <button id="decline" class="ghost">Decline</button>
+      <button id="accept" class="primary">Accept</button>
+    </footer>
+
+    <div class="note">Saved to your Downloads folder, unless you changed it in Settings.</div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
